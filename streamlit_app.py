@@ -5,7 +5,6 @@ import backend_modules.session_state_manager as ssm
 import backend_modules.package_creator as pc
 import backend_modules.error_checking as ec
 from datetime import datetime
-import boto3
 import chardet
 from io import BytesIO
 
