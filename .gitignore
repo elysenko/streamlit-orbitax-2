@@ -1,4 +1,12 @@
+# secrets
 .streamlit/secrets.toml
+*.secrets
+
+# cache
+*.DS_Store
+
+# reporting
+*reports/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

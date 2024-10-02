@@ -1,1 +1,1 @@
-streamlitpandasopenpyxldatetimenumpymathchardet
+streamlitpandasopenpyxldatetimenumpychardet
