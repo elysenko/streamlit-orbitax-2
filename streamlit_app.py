@@ -40,6 +40,9 @@ if not 'qtr' in st.session_state:
 if not 'yr' in st.session_state:
     st.session_state.yr = ssm.get_curr_year()
 
+if not 'acv_df' in st.session_state:
+    st.session_state.acv_df = ssm.get_curr_acv()
+
 if not 'report_type' in st.session_state:
     st.session_state.report_type = ssm.get_curr_report_type()
 
@@ -49,7 +52,7 @@ def clear_data():
     
     df = pd.DataFrame(columns=st.session_state.base_cols)
     
-    df.to_csv(st.session_state.working_df_path,index=False)
+    ssm.write_curr_acv(df)
     
     st.session_state.upload_key += 1
     
@@ -59,7 +62,7 @@ def clear_data():
 def save_working_df(df):
     """Saves the working df you are working on"""
     
-    df.to_csv(st.session_state.working_df_path,index=False)
+    ssm.write_curr_acv(df)
     
     return
 
@@ -118,8 +121,8 @@ def file_uploader(report_type):
         try:
             base_df = ssm.get_curr_acv()
         except:
-            pass
-        
+            clear_data()
+    
     # set the date cols accordingsly
     base_df['Client'] = base_df['Client'].fillna('').astype(str)    
     base_df['Contract Start Date'] = pd.to_datetime(base_df['Contract Start Date'], errors='coerce')
@@ -232,52 +235,60 @@ with col3:
     rprtGen = rprtGenerator(st.session_state.mat_codes,dataPckg)
     st.write("")
     
-    # get all the errors
-    acv_errors = ec.acv_error_checking(ssm.get_curr_acv()) 
-    roy_perc_errors = ec.roy_perc_error_checking(st.session_state.roy_perc)
-    mat_code_errors = ec.mat_codes_error_checking(st.session_state.mat_codes)
-    if len(acv_errors + roy_perc_errors + mat_code_errors) == 0:
-        disabled = False
-    else:
-        disabled = True
-        
-    st.button("Create Report",on_click=create_report,args=(rprtGen,ssm.get_curr_acv(),filename,),disabled=disabled)
-
+   
 col1,col2,col3 = st.columns([1,1,1])
 with col1:
     st.session_state.acv_df = file_uploader(report_type)
     sort_column = st.selectbox('Select column to sort by:', [None]+st.session_state.acv_df.columns.tolist())
+    if not sort_column is None:
+        st.write('Table Locked for Editing')
+        st.write('Set Filter to None to Make Changes')
 with col2:
     st.write("")
     st.button("Clear Data",on_click=clear_data)
-with col3:
-    # display thge errors
-    st.write('ACV cols missing data')
-    st.write(acv_errors)
-    st.write('Royalty Percent cols missing data')
-    st.write(roy_perc_errors)
-    st.write('Material Code cols missing data')
-    st.write(mat_code_errors)
     
 ## Display the table of data
 acv_df = st.session_state.acv_df
 if not sort_column is None:
     acv_df = acv_df.sort_values(by=sort_column, ascending=True)
+    table_disabled = False # can be set to true to disable of filter
 else:
     acv_df = acv_df.sort_index()
+    table_disabled = False
 acv_df = st.data_editor(acv_df,
                              num_rows='dynamic',
                              column_config={
-                                  "Client": st.column_config.TextColumn(),
-                                  "SP Customer Number": st.column_config.NumberColumn( format="%f"),
-                                  "Contract Number": st.column_config.NumberColumn(format="%f"),
-                                  'ACV': st.column_config.NumberColumn("ACV ($)", format="%f"),
-                                  'Material Code':st.column_config.NumberColumn('Material Code', format="%f"),
-                                  'Contract Start Date': st.column_config.DateColumn(format='MM/DD/YYYY'),
-                                  'Contract End Date': st.column_config.DateColumn(format='MM/DD/YYYY'),
+                                  "Client": st.column_config.TextColumn(disabled=table_disabled),
+                                  "SP Customer Number": st.column_config.NumberColumn( format="%f",disabled=table_disabled),
+                                  "Contract Number": st.column_config.NumberColumn(format="%f",disabled=table_disabled),
+                                  'ACV': st.column_config.NumberColumn("ACV ($)", format="%f",disabled=table_disabled),
+                                  'Material Code':st.column_config.NumberColumn('Material Code', format="%f",disabled=table_disabled),
+                                  'Contract Start Date': st.column_config.DateColumn(format='MM/DD/YYYY',disabled=table_disabled),
+                                  'Contract End Date': st.column_config.DateColumn(format='MM/DD/YYYY',disabled=table_disabled),
+                                  
                              },
                              on_change=change_state, args=(acv_df,'acv_df',),
                              hide_index=True,
                         )
 
 ssm.write_curr_acv(acv_df)
+st.session_state.acv_df = acv_df
+
+# Erro checking
+st.title('Error Checking')
+acv_errors = ec.acv_error_checking(st.session_state.acv_df) 
+roy_perc_errors = ec.roy_perc_error_checking(st.session_state.roy_perc)
+mat_code_errors = ec.mat_codes_error_checking(st.session_state.mat_codes)
+if len(acv_errors + roy_perc_errors + mat_code_errors) == 0:
+    err_disabled = False
+else:
+    err_disabled = True
+    
+st.button("Create Report",on_click=create_report,args=(rprtGen,ssm.get_curr_acv(),filename,),disabled=err_disabled)
+st.write('ACV cols missing data')
+st.write(acv_errors)
+st.write('Royalty Percent cols missing data')
+st.write(roy_perc_errors)
+st.write('Material Code cols missing data')
+st.write(mat_code_errors)
+
