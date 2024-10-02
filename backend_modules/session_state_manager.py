@@ -108,7 +108,7 @@ def write_data(data,folder,filename):
     if not os.path.isdir(folder):
         os.mkdir(folder)
     
-    df.to_csv(full_path,index=False)
+    df.to_csv(full_path)
     
     return
 
@@ -117,6 +117,6 @@ def read_data(folder,filename):
     
     full_path = os.path.join(folder,filename)
     
-    df = pd.read_csv(full_path)
+    df = pd.read_csv(full_path,index_col='Index')
     
     return df
