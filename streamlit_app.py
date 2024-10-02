@@ -241,20 +241,16 @@ with col3:
     else:
         disabled = True
         
-    
     st.button("Create Report",on_click=create_report,args=(rprtGen,ssm.get_curr_acv(),filename,),disabled=disabled)
-
-
 
 col1,col2,col3 = st.columns([1,1,1])
 with col1:
     st.session_state.acv_df = file_uploader(report_type)
+    sort_column = st.selectbox('Select column to sort by:', [None]+st.session_state.acv_df.columns.tolist())
 with col2:
     st.write("")
     st.button("Clear Data",on_click=clear_data)
 with col3:
-    
-    
     # display thge errors
     st.write('ACV cols missing data')
     st.write(acv_errors)
@@ -265,8 +261,11 @@ with col3:
     
 ## Display the table of data
 acv_df = st.session_state.acv_df
+if not sort_column is None:
+    acv_df = acv_df.sort_values(by=sort_column, ascending=True)
+else:
+    acv_df = acv_df.sort_index()
 acv_df = st.data_editor(acv_df,
-                             hide_index=True,
                              num_rows='dynamic',
                              column_config={
                                   "Client": st.column_config.TextColumn(),
@@ -277,7 +276,8 @@ acv_df = st.data_editor(acv_df,
                                   'Contract Start Date': st.column_config.DateColumn(format='MM/DD/YYYY'),
                                   'Contract End Date': st.column_config.DateColumn(format='MM/DD/YYYY'),
                              },
-                             on_change=change_state, args=(acv_df,'acv_df',)
+                             on_change=change_state, args=(acv_df,'acv_df',),
+                             hide_index=True,
                         )
 
 ssm.write_curr_acv(acv_df)
