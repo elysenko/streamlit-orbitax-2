@@ -269,6 +269,8 @@ def incorporate_df_changes(df_key,all_changes_key):
     
     st.session_state[df_key] = df
     
+    ssm.write_curr_acv(df)
+    
     return 
 # ****************************************************************************
 
