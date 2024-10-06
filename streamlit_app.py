@@ -7,6 +7,7 @@ import backend_modules.error_checking as ec
 from datetime import datetime
 import chardet
 from io import BytesIO
+import numpy as np
 
 # configuration
 st.set_page_config(layout="wide")
@@ -43,9 +44,20 @@ if not 'yr' in st.session_state:
 if not 'acv_df' in st.session_state:
     st.session_state.acv_df = ssm.get_curr_acv()
 
+if not 'acv_df_view' in st.session_state:
+    st.session_state.acv_df_view = ssm.get_curr_acv()
+
 if not 'report_type' in st.session_state:
     st.session_state.report_type = ssm.get_curr_report_type()
-
+    
+if not 'qtrs' in st.session_state:
+    st.session_state.qtrs = ["Q1", "Q2", "Q3","Q4"]
+    
+if not 'yrs' in st.session_state:
+    st.session_state.yrs = list(reversed(range(2000,datetime.now().year + 1)))
+    
+if not 'report_types' in st.session_state:
+    st.session_state.report_types = ["Domestic", "Australia"]
 # ************************* Functions ****************************************
 def clear_data():
     """Clears the working directory"""
@@ -58,14 +70,6 @@ def clear_data():
     
     return
 
-## Display the table of data
-def save_working_df(df):
-    """Saves the working df you are working on"""
-    
-    ssm.write_curr_acv(df)
-    
-    return
-
 def change_state(edited_df,ss_key):
       st.session_state[ss_key]=edited_df
       
@@ -74,6 +78,7 @@ def change_state(edited_df,ss_key):
 ## Rename Table headers
 def convert_header(df):
     dom_conv_dic = {'SP CUSTOMER NAME': 'Client',
+                    'SP Customer Name': 'Client',
                 'SAP Contract Start Date':'Contract Start Date',
                 'SAP Contract End Date':'Contract End Date',
                 'Sub Material Num (Numeric)': 'Material Code',
@@ -90,6 +95,54 @@ def convert_header(df):
 
     return df       
 
+def set_str_from_filename(filename):
+    """Sets the Quarter if found in filename"""
+    
+    # Remove Suffix
+    filename = filename.split('.')[0]
+    
+    filename_list = filename.split('_')
+    
+    for qtr in st.session_state.qtrs:
+        if str(qtr) in filename_list:
+            ssm.write_curr_qtr(qtr)
+            st.session_state.qtr = qtr
+            break
+    
+    return
+
+def set_yr_from_filename(filename):
+    """Sets the Year if found in filename"""
+    
+    # Remove Suffix
+    filename = filename.split('.')[0]
+    
+    filename_list = filename.split('_')
+    
+    print(filename_list)
+    for yr in st.session_state.yrs:
+        if str(yr) in filename_list:
+            ssm.write_curr_year(yr)
+            st.session_state.yr = yr
+            break
+    return
+
+def set_rt_from_filename(filename):
+    """Sets the Report Type if found in filename"""
+    
+    # Remove Suffix
+    filename = filename.split('.')[0]
+    
+    filename_list = filename.split('_')
+    
+    print(filename_list)
+    for rt in st.session_state.report_types:
+        if str(rt) in filename_list:
+            ssm.write_curr_report_type(rt)
+            st.session_state.report_type = rt
+            break
+    return
+
 ## Uploade an ACV
 def file_uploader(report_type):
     """Upload an ACV"""
@@ -98,7 +151,8 @@ def file_uploader(report_type):
     uploaded_file = st.file_uploader("Upload an ACV (.csv)",type=['csv'],key=uploader_key)
     
     base_df = pd.DataFrame(columns = st.session_state.base_cols)
-
+    
+        
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
         
@@ -117,9 +171,20 @@ def file_uploader(report_type):
         for col in df.columns:
             if col in base_df.columns:
                 base_df[col] = df[col]
+        
+        # set year, quater, and report type
+        filename = uploaded_file.name
+        set_str_from_filename(filename)
+        set_yr_from_filename(filename)
+        st.session_state.upload_key += 1
+        
+        # set base df
+        ssm.write_curr_acv(base_df)
+        
+        st.rerun()
     else:
         try:
-            base_df = ssm.get_curr_acv()
+            base_df = st.session_state.acv_df
         except:
             clear_data()
     
@@ -149,7 +214,62 @@ def create_report(rprtGen,acv_df,filename):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     
+    # write the df
+    ssm.write_curr_acv(st.session_state.acv_df)
 
+def is_not_empty(obj):
+    """verifies if changes are empty or not"""
+    
+    # Check for empty lists or empty dictionaries
+    if isinstance(obj, list):
+        return len(obj) > 0 and any(is_not_empty(item) for item in obj)
+    elif isinstance(obj, dict):
+        return len(obj) > 0 and any(is_not_empty(value) for value in obj.values())
+    return True  # Non-empty objects or other types are considered valid
+
+
+def incorporate_df_changes(df_key,all_changes_key):
+    """updates a df with changes"""
+    
+    all_changes = st.session_state[all_changes_key]
+    df = st.session_state[df_key]
+    
+    print('all_changes: (next)')
+    print(all_changes)
+    
+    print('df BEFORE: (next)')
+    print(df)
+    
+    df = df.reset_index(drop=True)
+    
+    if is_not_empty(all_changes):
+        for row in all_changes['edited_rows']:
+            for col in all_changes['edited_rows'][row].keys():
+                change = all_changes['edited_rows'][row][col]
+                df.loc[row,col]  = change
+                
+        for deletions in all_changes['deleted_rows']:
+            df.drop(deletions,inplace=True)
+        
+        if(len(all_changes['added_rows'])) > 0:
+            for row in all_changes['added_rows']:
+                if '_index' in row.keys():
+                    idx = row[list(row.keys())[0]]
+                    cols = list(row.keys())[1:]
+                else:
+                    idx = len(df)
+                    cols = list(row.keys())
+                for col in cols:
+                    val = row[col]
+                    df.loc[idx,col] = val 
+    
+    df = df.reset_index(drop=True)
+    print('df AFTER: (next)')
+    print(df)
+    
+    st.session_state[df_key] = df
+    
+    return 
 # ****************************************************************************
 
 # Application Title
@@ -161,7 +281,7 @@ with col1:
     sub_col1,sub_col2,sub_col3 = st.columns([1,1,1])
     with sub_col1:
         report_type = ssm.get_curr_report_type()
-        types = ["Domestic", "Australia"]
+        types = st.session_state.report_types
         report_idx = types.index(report_type)
         report_type = st.radio(
             "Report Type",
@@ -177,24 +297,26 @@ with col1:
 
     with sub_col2:
         qtr = ssm.get_curr_qtr()
-        qtrs = ["Q1", "Q2", "Q3","Q4"]
+        qtrs = st.session_state.qtrs
         qtr_idx = qtrs.index(qtr)
         qtr = st.selectbox(
             "Report Quarter",
             qtrs,
             index=qtr_idx,
-            on_change=change_state,args=(qtr,'qtr',)
+            on_change=change_state,args=(qtr,'qtr',),
+            key='qtr_selectbox'
         )
         ssm.write_curr_qtr(qtr)
     with sub_col3:
         yr = ssm.get_curr_year()
-        yr_rng = list(reversed(range(2000,datetime.now().year + 1)))
+        yr_rng = st.session_state.yrs
         yr_idx = yr_rng.index(yr)
         yr = st.selectbox(
             "Report Year",
             yr_rng,
             index=yr_idx,
-            on_change=change_state,args=(yr,'yr')
+            on_change=change_state,args=(yr,'yr'),
+            key='year_selectbox'
         )
         ssm.write_curr_year(yr)
 with col2:
@@ -213,13 +335,13 @@ with col3:
     # create filenames for reports
     if australia_flag:
         # base_folder = base_folder +  r"\..\AUSTRALIA ACV - Last 5 Quarters"
-        filename = f"Australia ACV {yr} {qtr}.csv"
+        filename = f"Australia RR {qtr} {yr}.csv"
     else:
         # normal ACV's
-        filename = rf"{qtr}_{yr}_ACV.csv"
+        filename = rf"Domestic RR {qtr} {yr}.csv"
     dataPckg = {
-                'qtr':qtr,
-                'yr':yr,
+                'qtr':ssm.get_curr_qtr(),
+                'yr':ssm.get_curr_year(),
                 'packages': pckgDic,
                 
                 'sngl': True, 'test': False,
@@ -239,6 +361,7 @@ with col3:
 col1,col2,col3 = st.columns([1,1,1])
 with col1:
     st.session_state.acv_df = file_uploader(report_type)
+    st.session_state.acv_df_view = st.session_state.acv_df.copy()
     sort_column = st.selectbox('Select column to sort by:', [None]+st.session_state.acv_df.columns.tolist())
     if not sort_column is None:
         st.write('Table Locked for Editing')
@@ -248,7 +371,7 @@ with col2:
     st.button("Clear Data",on_click=clear_data)
     
 ## Display the table of data
-acv_df = st.session_state.acv_df
+acv_df = st.session_state.acv_df_view
 if not sort_column is None:
     acv_df = acv_df.sort_values(by=sort_column, ascending=True)
     table_disabled = False # can be set to true to disable of filter
@@ -267,25 +390,31 @@ acv_df = st.data_editor(acv_df,
                                   'Contract End Date': st.column_config.DateColumn(format='MM/DD/YYYY',disabled=table_disabled),
                                   
                              },
-                             on_change=change_state, args=(acv_df,'acv_df',),
-                             hide_index=True,
+                             on_change=incorporate_df_changes, args=('acv_df','acv_df_changes',),
+                             hide_index=False,
+                             key='acv_df_changes'
                         )
 
-ssm.write_curr_acv(acv_df)
-st.session_state.acv_df = acv_df
-
-# Erro checking
-st.title('Error Checking')
+# Create Report Button
 acv_errors = ec.acv_error_checking(st.session_state.acv_df) 
 roy_perc_errors = ec.roy_perc_error_checking(st.session_state.roy_perc)
 mat_code_errors = ec.mat_codes_error_checking(st.session_state.mat_codes)
-if len(acv_errors + roy_perc_errors + mat_code_errors) == 0:
+if len(acv_errors.keys()) + len(roy_perc_errors.keys()) + len(mat_code_errors.keys()) == 0:
     err_disabled = False
 else:
     err_disabled = True
-    
-st.button("Create Report",on_click=create_report,args=(rprtGen,ssm.get_curr_acv(),filename,),disabled=err_disabled)
+st.button("Create Report",on_click=create_report,args=(rprtGen,st.session_state.acv_df,filename,),disabled=err_disabled)
+
+# Error Checking
+st.title('Error Checking')
 st.write('ACV cols missing data')
+# for key in acv_errors.keys():
+#     st.markdown(f'##### {key}')
+#     st.markdown('###### Indices:')
+#     lst = acv_errors[key]
+#     s = '' 
+#     for i in lst: s += "- " + str(i) + "\n"
+#     st.markdown(s)
 st.write(acv_errors)
 st.write('Royalty Percent cols missing data')
 st.write(roy_perc_errors)
