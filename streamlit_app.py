@@ -77,21 +77,24 @@ def change_state(edited_df,ss_key):
 
 ## Rename Table headers
 def convert_header(df):
-    dom_conv_dic = {'SP CUSTOMER NAME': 'Client',
-                    'SP Customer Name': 'Client',
+    conv_dic = {'SP CUSTOMER NAME': 'Client',
+                'SP Customer Name': 'Client',
                 'SAP Contract Start Date':'Contract Start Date',
                 'SAP Contract End Date':'Contract End Date',
                 'Sub Material Num (Numeric)': 'Material Code',
-        }
-    aus_conv_dic = {'SP Name':'Client',
-                    'Sub Material Num (Numeric)':'Material Code',
-                    'Amount in USD':'ACV',
-                    'Billing Plan Start Date':'Contract Start Date',
-                    'Billing Plan End Date':'Contract End Date',
+    
+                'SP Name':'Client',
+                'Sub Material Num (Numeric)':'Material Code',
+                'Amount in USD':'ACV',
+                'Billing Plan Start Date':'Contract Start Date',
+                'Billing Plan End Date':'Contract End Date',
                     }
     
-    df.rename(columns=dom_conv_dic, inplace=True)  
-    df.rename(columns=aus_conv_dic, inplace=True)     
+    df.columns = [col.strip() for col in df.columns]
+    
+    print('df.columns: (next)')
+    print(df.columns)
+    df.rename(columns=conv_dic, inplace=True)  
 
     return df       
 
@@ -163,9 +166,7 @@ def file_uploader(report_type):
         
         # Clean Column Headers
         df.columns = df.columns.str.strip()
-        
-        # Normalize Headers
-        base_df = convert_header(base_df)
+        df = convert_header(df)
         
         # get only columns in the report type header
         for col in df.columns:
@@ -196,11 +197,15 @@ def file_uploader(report_type):
     return base_df
 
 ## Create the report
-def create_report(rprtGen,acv_df,filename):
+def create_report(filename):
     """Creates a report and checks for missing fields"""
     
     # generate the workbook
-    wb = rprtGen.gen_rep(acv_df)
+    rprtGen = rprtGenerator(st.session_state.mat_codes,st.session_state.dataPckg)
+    
+    payload = rprtGen.gen_rep(st.session_state.acv_df)
+    wb = payload['wb']
+    new_filename = payload['new_filename']
     
     # create a stream object
     buffer = BytesIO()
@@ -208,9 +213,9 @@ def create_report(rprtGen,acv_df,filename):
     buffer.seek(0)
     
     st.download_button(
-        label="Click here to download your Excel file",
+        label="Download your Report",
         data=buffer,
-        file_name=filename,
+        file_name=new_filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     
@@ -356,7 +361,8 @@ with col3:
     for key in scndYrDic.keys():
         dataPckg[key] = scndYrDic[key]
     
-    rprtGen = rprtGenerator(st.session_state.mat_codes,dataPckg)
+    
+    st.session_state.dataPckg = dataPckg
     st.write("")
     
    
@@ -405,7 +411,7 @@ if len(acv_errors.keys()) + len(roy_perc_errors.keys()) + len(mat_code_errors.ke
     err_disabled = False
 else:
     err_disabled = True
-st.button("Create Report",on_click=create_report,args=(rprtGen,st.session_state.acv_df,filename,),disabled=err_disabled)
+st.button("Create Report",on_click=create_report,args=(filename,),disabled=err_disabled)
 
 # Error Checking
 st.title('Error Checking')
