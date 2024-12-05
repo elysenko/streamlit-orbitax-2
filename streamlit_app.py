@@ -164,6 +164,9 @@ def file_uploader(report_type):
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file, encoding=result['encoding'])
         
+        print('uploaded df')
+        print(df)
+        print('---------------------------------------------------')
         # Clean Column Headers
         df.columns = df.columns.str.strip()
         df = convert_header(df)
@@ -181,6 +184,8 @@ def file_uploader(report_type):
         
         # set base df
         ssm.write_curr_acv(base_df)
+        st.session_state.acv_df = base_df
+        st.session_state.acv_df_view = base_df.copy()
         
         st.rerun()
     else:
@@ -368,8 +373,8 @@ with col3:
    
 col1,col2,col3 = st.columns([1,1,1])
 with col1:
-    st.session_state.acv_df = file_uploader(report_type)
-    st.session_state.acv_df_view = st.session_state.acv_df.copy()
+    file_uploader(report_type)
+    
     sort_column = st.selectbox('Select column to sort by:', [None]+st.session_state.acv_df.columns.tolist())
     if not sort_column is None:
         st.write('Table Locked for Editing')
@@ -379,7 +384,7 @@ with col2:
     st.button("Clear Data",on_click=clear_data)
     
 ## Display the table of data
-acv_df = st.session_state.acv_df_view
+acv_df = st.session_state.acv_df.copy()
 if not sort_column is None:
     acv_df = acv_df.sort_values(by=sort_column, ascending=True)
     table_disabled = False # can be set to true to disable of filter
