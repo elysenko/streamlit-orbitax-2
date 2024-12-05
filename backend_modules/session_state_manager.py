@@ -107,8 +107,13 @@ def write_data(data,folder,filename):
     # make the directory if it does not exist
     if not os.path.isdir(folder):
         os.mkdir(folder)
+        
+    df.index.names = ['Index']
     
-    df.to_csv(full_path)
+    print('df before saving: (next)')
+    print(df)
+    
+    df.to_csv(full_path,index=True)
     
     return
 

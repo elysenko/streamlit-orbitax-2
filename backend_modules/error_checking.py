@@ -9,34 +9,36 @@ Created on Wed Oct  2 13:29:41 2024
 def acv_error_checking(df):
     """Checks that all ACV fields are correctly formatted before creating a report"""
     
-    bad_cols = df_check(df)
+    bad_dic = df_check(df)
+    
     
     if len(df[df['Client']=='']) > 0:
-        bad_cols.append('Client')
+        bad_dic['Client'] = df[df['Client']==''].index.tolist()
     
-    return bad_cols
+    return bad_dic
     
 def mat_codes_error_checking(df):
     """Checks that all Material Code fields are correctly formatted before creating a report"""
     
-    bad_cols = df_check(df)
+    bad_dic = df_check(df)
     
-    return bad_cols
+    return bad_dic
 
 def roy_perc_error_checking(df):
     """Checks that all Material Code fields are correctly formatted before creating a report"""
     
-    bad_cols = df_check(df)
+    bad_dic = df_check(df)
     
-    return bad_cols
+    return bad_dic
 
 def df_check(df):
     
-    bad_cols = []
+    bad_dic = {}
     
     for col  in df.columns:
-        if df[col].isna().any():
-            bad_cols.append(col)
+        na_df = df[df[col].isna()]
+        if len(na_df) > 0:
+            bad_dic[col] = na_df.index.tolist()
     
-    return bad_cols
+    return bad_dic
 
