@@ -29,6 +29,9 @@ class rprtGenerator(xlFuncs):
     This class handles all report generation
     """
     def __init__(self,codes,dataPckg):
+        self.yr = dataPckg['yr']
+        self.qtr = dataPckg['qtr']
+        self.filename = dataPckg['filename']
         self.dataPckg = dataPckg
         self.codes = self.cleanCodes(codes.copy())
         self.moDict = {1:"q1",2:"q1",3:"q1",
@@ -105,9 +108,6 @@ class rprtGenerator(xlFuncs):
             rnwl_hdr = self.hdrDic[tp] + " - Renewals:"
             rep = self.appendSection(rep, rnwl, rnwl_hdr)
         
-        # FILTER OUT ROWS AFTER THIS QUARTER
-        
-        
         # CALCULATE THE NUMBER OF MONTHS BILLED IF LESS THAN 12
         rep = rep.reset_index(drop=True)
         rep['Months Billed (<12)'] = rep[rep['SP Customer Number'].notnull()].apply(lambda row: self.getNumMoBlld(row), axis=1)
@@ -166,8 +166,6 @@ class rprtGenerator(xlFuncs):
         # create df_ref for cell references
         wb = Workbook()
         ws = wb.worksheets[0]
-        yr = self.dataPckg['yr']
-        qtr = self.dataPckg['qtr']
         sheet_name = 'Royalty Report'
         ws.title = sheet_name
         df_ref = self.wsToCellRef(ws,rep) 
@@ -196,7 +194,7 @@ class rprtGenerator(xlFuncs):
         er = excel_reporter()
         
         payload = {'sheet_name' : sheet_name, 
-                   'header' : f'Royalty Report {qtr}, {yr}',
+                   'header' : f'Royalty Report {self.qtr}, {self.yr}',
                    'hide_cols' : ['Filter'],
                    'mult_cols' : {payment_hdr:['% Royalty Base Due','$ Actual Royalty Base','Months Billed (<12)']},
                    'prc_cols' : [col for col in rep.columns if '%' in col],
@@ -204,9 +202,13 @@ class rprtGenerator(xlFuncs):
                    'fontcolor_cols' : {(220,20,60):['Late New','Late Renewal']},
                    'mult_idcs' : mult_idcs,
                    }
-        wb = er.create_report(rep,**payload)
         
-        return wb
+        wb = er.create_report(rep,**payload)
+        new_filename = self.filename.split('.')[0] + '.xlsx'
+        
+        payload = {'wb':wb,'new_filename':new_filename}
+        
+        return payload
     
     def multiply(hdr='',cols=[],op = '*'):
         """Performs the operation on the cells"""
@@ -296,7 +298,6 @@ class rprtGenerator(xlFuncs):
                 new_header = df.iloc[0] #grab the fdfst row for the header
                 df = df[1:] #take the data less the header row
                 df.columns = new_header
-                hdrs = list(df.columns.values)
             return df
         def reformHdrs(df):
             """
@@ -484,8 +485,7 @@ class rprtGenerator(xlFuncs):
 
         # Gets the correct date and creates Start Date and End Date columns for it
         df = df.apply(lambda row:formatDateRow(row),axis = 1)
-        # drop the columns that are not needed
-        # df = df.drop(columns = ['SAP Contract Start Date','Contract End Date','Multi Year Date','MYR Contract End Date'])
+
         return df
 
     def getRoyBs(self,data):
@@ -584,7 +584,6 @@ class rprtGenerator(xlFuncs):
         rr = row['% ACV Subject to Royalty']
         if isinstance(rr,str):
             if row['% ACV Subject to Royalty'] == "na":
-                australia_flag = self.dataPckg['australia']
                 self.acv_hdr = 'ACV'
                 roy = row[self.acv_hdr]
                 return roy
@@ -1224,7 +1223,7 @@ class rprtGenerator(xlFuncs):
             moDiff = moDiff + 1
         return moDiff
 
-    def getEndingMonths(self,row,filename):
+    def getEndingMonths(self,row):
         """
         determines if a row's end date is withing 1,2, or 3 months of today's date
         """
@@ -1322,7 +1321,7 @@ class rprtGenerator(xlFuncs):
         else:
             return False
 
-    def detIfFrstBllng(self,row, cl_lst, cd_chngs, filename):
+    def detIfFrstBllng(self,row, cl_lst, cd_chngs):
         """
         determines if a contracts has started or if TR is preemptively
         putting it on the ACV.
@@ -1330,39 +1329,22 @@ class rprtGenerator(xlFuncs):
         Also checks if the start date of the contract is after the current
         billing quarter.
         """
-        # FIND THE NEXT QUARTER BASED ON THE FILENAME
-        australia = self.dataPckg['australia']
-        if australia:
-            date = filename.split(".")[0].split(" ")
-            yr = date[-2]
-            qtr = date[-1]
-        else:
-            date = filename.split(".")[0].split("_")
-            yr = date[1]
-            qtr = date[0]
-
-
+        
         # VERIFY THE CLIENT IS NOT IN ANY OF THE PREVIOUS RELEVANT ACVs
         cust_num = row['SP Customer Number']
         mat_cd = row['Material Code']
         cust_name = row['Client']
         contr_num = row['Contract Number']
-        if str(cust_num) == '1003849882.0':
-            poo = 1
-        if cust_name == "HUMANA INC.":
-            poo= 1
         if self.inClLst(cl_lst, cust_num, cd_chngs, mat_cd, contr_num, cust_name):
             """
             VERIFIES IF THE CLIENT HAS ALREADY BEEN BILLED AT SOME POINT
             CHECK IF ANY PREVIOUS CONTRACT END DATE IS BEFORE THE CURRENT START DATE
             """
-            if cust_name == "HUMANA INC.":
-                poo = 1
             df = self.getClInLst(cl_lst, cust_num, cd_chngs, mat_cd, contr_num, cust_name)
             end_dates = set(df['Contract End Date'].to_list())
             # IF ANY END DATES ARE BEFORE THE CURRENT START DATE, IT'S A RENEWAL
             alrdy_end = False
-            curr_strt = self.normalizeDt(self.qtrToDate(qtr,yr))
+            curr_strt = self.normalizeDt(self.qtrToDate(self.qtr,self.yr))
             for end_date in end_dates:
                end_date =  self.normalizeDt(end_date)
                if end_date <= curr_strt:
@@ -1371,33 +1353,20 @@ class rprtGenerator(xlFuncs):
         else:
             return True
 
-    def detIfBlldThsQtr(self,row,filename):
+    def detIfBlldThsQtr(self,row):
         """
         Determines if a company should be billed this quarter or not.
         If the quarter and year are a match and if the ACV value is greater than
         $0
         """
 
-        australia = self.australia_flag
-        # Unpack the year and quarter from the filename
-        if australia:
-            date = filename.split(".")[0].split(" ")
-            yr = date[-2]
-            qtr = date[-1]
-        else:
-            date = filename.split(".")[0].split("_")
-            yr = date[1]
-            qtr = date[0]
-
         start = row['start date']
         strt_mo = start[:2]
         strt_yr = start[6:]
         strt_qtr = self.moDict[int(strt_mo)]
         acv = row['$ ACV']
-        cust_name = row['Client']
-        if cust_name == "SYLVAMO":
-            poo = 1
-        if strt_yr == yr and strt_qtr.lower() == qtr.lower() and acv > 0:
+
+        if strt_yr == self.yr and strt_qtr.lower() == self.qtr.lower() and acv > 0:
             return True
         else:
             return False
@@ -1413,8 +1382,6 @@ class rprtGenerator(xlFuncs):
         mat_cd = row['Material Code']
         contr_num = row['Contract Number']
         cust_name = row['Client']
-        if "SYLVAMO" in cust_name:
-            poo = 1
 
         if self.isLate(row, cd_chngs, cl_dir, filename) and not self.inClLst(cl_lst, cust_num, cd_chngs, mat_cd, contr_num, cust_name) and not self.inClLst(cl_lst_4,  cust_num, cd_chngs, mat_cd, contr_num, cust_name):
             return True
@@ -1425,17 +1392,7 @@ class rprtGenerator(xlFuncs):
         """
         Determines if a company billed outside of this quarter should be considered late
         """
-        cust_num = row['SP Customer Number']
-        cust_name = row['Client']
         
-        if row.name == 379:
-            poo = 1
-        if row.name == 378:
-            poo = 1
-        if 'HLB' in cust_name:
-            poo =1
-        if str(cust_num) == "1005739546.0":
-            poo = 1
         if self.isLate(row, cd_chngs, cl_dir, filename):
             return True
         else:
@@ -1458,8 +1415,6 @@ class rprtGenerator(xlFuncs):
         mat_cd = row['Material Code']
         contr_num = row['Contract Number']
         cust_name = row['Client']
-        if "HLB MANN JUDD" in cust_name:
-            poo = 1
 
         if self.isLate(row, cd_chngs, cl_dir, filename) and (self.inClLst(cl_lst,  cust_num, cd_chngs, mat_cd, contr_num, cust_name) or self.inClLst(cl_lst_4,  cust_num, cd_chngs, mat_cd, contr_num, cust_name)):
             return True
@@ -1493,8 +1448,7 @@ class rprtGenerator(xlFuncs):
         Gets the filenames of all client lists since the given qtr and yr
         """
         filenames = []
-        curr_qtr, curr_yr = self.getQtrYrFrmAcv(curr_filename)
-        curr_date = self.normalizeDt(self.qtrToDate(curr_qtr,curr_yr))
+        curr_date = self.normalizeDt(self.qtrToDate(self.qtr,self.yr))
         filename = self.mkClFlnm(qtr.upper(), yr)
         filenames.append(filename)
         nxt_qtr, nxt_yr = self.getNxtQtr(qtr,yr)
@@ -1516,14 +1470,6 @@ class rprtGenerator(xlFuncs):
         filenames = self.detClLsts(qtr,yr,curr_filename)
         dfs = []
 
-        cust_name = row['Client']
-        if cust_name == "HUMANA INC.":
-            poo = 1
-        if cust_name == "BRANDTECH INC":
-            poo = 1
-        if cust_name == "AMERICAN EXPRESS TRAVEL RELATED SER":
-            poo = 1
-
         for filename in filenames:
             cl_path = os.path.join(cl_dir, filename)
             if os.path.exists(cl_path):
@@ -1537,8 +1483,6 @@ class rprtGenerator(xlFuncs):
         mat_cd = row['Material Code']
         cust_name = row['Client']
         contr_num = row['Contract Number']
-        if cust_name == "HUMANA INC.":
-            poo = 1
         if self.inClLst(cl_lst, cust_num, cd_chngs, mat_cd, contr_num, cust_name):
             return False
         else:
@@ -1557,43 +1501,23 @@ class rprtGenerator(xlFuncs):
         yr = str(yr)
         return qtr,yr
 
-    def concatRows(self,df):
-        # Concatenate rows with the same contract numbers, material code, start date, end date, customer name, and customer number
-        contr_nums = df['Contract Number'].to_list()
-        duplicates = set([x for x in contr_nums if contr_nums.count(x) > 1])
-
-        for contr_num in duplicates:
-            temp = df[df['Contract Number'] == contr_num]
-            subset = ['Contract Number', 'Material Code', 'start date', 'end date', 'Client', 'SP Customer Number']
-            temp2 = temp.drop_duplicates(subset=subset, keep='first', inplace=True)
-            if len(temp2) < len(temp):
-                poo = 1
-
-
     def getClientList(self,acv_df,wb=None,fltr_col=True):
         """
         This function saves and returns the formatted client list
         """
-        australia = self.australia_flag
         print("creating client list")
-        # print("acv_df")
-        # print(acv_df)
-        # scrub data of empty rows
         acv_df = acv_df.dropna(how='all')
         
         # reformat
         acv_df = self.reformatDf(acv_df)
-        packages = self.dataPckg['packages']
-        filename = self.dataPckg['filename']
-
+        filename = self.mkClFlnm(self.qtr.upper(), self.yr)
+        
         # create the filename for the new ACV based on the old filename
-        curr_cl_lst_name = self.mkClFnmFrmAcv(filename)
+        curr_cl_lst_name = self.mkClFlnm(self.qtr,self.yr)
         # GET THE CODE CHANGES FROM THE ACV
         cd_chngs = self.updMatCds(acv_df)
         # GET THE PATH TO THE CLIENT LISTS BASED ON WHAT MACHINE YOU'RE USING
         cl_dir = self.getFldrPath("client_lists")
-        # print('cl_dir: (next)')
-        # print(cl_dir)
         # GET THE LAST THREE CLIENT LISTS COMBINED INTO ONE
         cl_lst = self.getAllCls(cl_dir, curr_cl_lst_name)
         # GET THE CLIENT LIST FROM A YEAR AGO
@@ -1623,14 +1547,13 @@ class rprtGenerator(xlFuncs):
         df.loc[:,'Ending Within 2 Months'] = ""
         df.loc[:,'Ending Within 3 Months'] = ""
         df = df.replace({'$ Max Royalty Base':"na"},"N/A")
-        df = df.apply(lambda row:self.getEndingMonths(row,filename), axis = 1)
+        df = df.apply(lambda row:self.getEndingMonths(row), axis = 1)
 
         # IF THE MO AND YR FOR THE SAP START CORRESPOND TO THE ACV QTR AND YR, MARK TRUE
-        df['Billed This Quarter'] = df.apply(lambda row:self.detIfBlldThsQtr(row,filename), axis = 1)
+        df['Billed This Quarter'] = df.apply(lambda row:self.detIfBlldThsQtr(row), axis = 1)
         
         # IF THE ENTRY IS FOUND WITHIN THE LAST THREE QUARTERS AND THE START DATE IS BEFORE THE REPORT DATE, MARK TRUE
-        print(df)
-        df['Is First Billing'] = df[df['Billed This Quarter'] == True].apply(lambda row:self.detIfFrstBllng(row,cl_lst,cd_chngs,filename), axis = 1)
+        df.loc[:,'Is First Billing'] = df[df['Billed This Quarter'] == True].apply(lambda row:self.detIfFrstBllng(row,cl_lst,cd_chngs), axis = 1)
         
         # SEE IF THE CUSTOMERS ARE BILLED IN THE FUTURE
         df['future'] = df.apply(lambda row: self.isFuturePayment(row),axis=1)
@@ -1670,8 +1593,8 @@ class rprtGenerator(xlFuncs):
         
         if not wb is None:
             er = excel_reporter()
-            yr = self.dataPckg['yr']
-            qtr = self.dataPckg['qtr']
+            yr = self.yr
+            qtr = self.qtr
             df = self.hdrToLine(df)
             df.loc[0] = np.nan
             payload = {
@@ -1704,7 +1627,6 @@ class rprtGenerator(xlFuncs):
             return True
         else:
             return False
-        
     
     def svClLst(self,df,acv):
         """
@@ -1714,8 +1636,7 @@ class rprtGenerator(xlFuncs):
         orb_pth = r'/home/orbitax/mysite'
         athn_pth = r'/home/athenaconsulting/app'
         fldr = "client_lists"
-        qtr, yr = self.acvQtrYr(acv)
-        filename = self.mkClFnmFrmAcv(acv)
+        filename = self.mkClFlnm(self.qtr,self.yr)
         if os.path.exists(orb_pth):
             curr_dir = orb_pth
         elif os.path.exists(athn_pth):
@@ -1759,21 +1680,6 @@ class rprtGenerator(xlFuncs):
             filename = f'domestic_clients_{qtr}_{yr}.csv'
         return filename
 
-    def mkClFnmFrmAcv(self,acv):
-        """
-        creates the filename to save for the client list based on the ACV filename
-        """
-        if self.australia_flag:
-            fname = acv.split(".")[0]
-            qtr = fname.split(" ")[-1]
-            yr = fname.split(" ")[-2]
-
-        else:
-            qtr = acv.split("_")[0]
-            yr = acv.split("_")[1]
-
-        return self.mkClFlnm(qtr,yr)
-
     def acvQtrYr(self,acv):
 
         australia = self.dataPckg['australia']
@@ -1813,7 +1719,6 @@ def resetClLsts():
         # GET THE LIST OF CODES AND THEIR CORRESPONDING ROYALTY AMOUNTS
         codes = pd.read_csv(r'./mat_codes.csv')
         rp = rprtGenerator(codes)
-        packages = {'itc':1,'pa':1,'beps':1,'dac6':1,'gmt':1,'icw':1}
 
         # CREATE THE CLIENT LIST
         rp.getClientList(acv_df,fltr_col=True)
@@ -1834,14 +1739,12 @@ def addXCol(df):
 
     return new_df
 
-
-
 if __name__=='__main__':
 
     # DO NOT DELETE: Global Vars for reporting
     australia = False
 
-    qtr = 'Q3'
+    qtr = 'Q1'
     yr = '2023'
     base_folder = r"C:\Users\Eric\Documents\Python Scripts\ORBITAX\ACVs"
     
@@ -1901,7 +1804,8 @@ if __name__=='__main__':
     except:
         codes = pd.read_csv(r'./../session_state/mat_codes.csv')
     rprtr = rprtGenerator(codes,dataPckg)
-    wb = rprtr.gen_rep(acv_df)
+    payload = rprtr.gen_rep(acv_df)
+    wb = payload['wb']
     moe = 1
 
     # DO NOT DELETE: Testing the client list

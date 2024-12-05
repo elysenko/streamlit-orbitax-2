@@ -15,8 +15,8 @@ try:
     from backend_modules.xlFuncs import xlFuncs 
     from backend_modules.xlIntrfc import xlIntrfc 
 except:
-    from .xlFuncs import xlFuncs 
-    from .xlIntrfc import xlIntrfc 
+    from xlFuncs import xlFuncs 
+    from xlIntrfc import xlIntrfc 
 from openpyxl import Workbook
 
 class excel_reporter(xlFuncs):
