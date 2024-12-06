@@ -243,7 +243,7 @@ class xlFuncs:
     def wsToCellRef(self,ws = None, df = None, horiz=0, vert=0):
         """Takes a df and returns an identically formatted df with cell numbers instead of data"""
         
-        if ws == None:
+        if ws is None:
             ws = self.ws
         
         if not isinstance(df,pd.DataFrame):

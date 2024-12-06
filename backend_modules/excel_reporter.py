@@ -63,6 +63,14 @@ class excel_reporter(xlFuncs):
             fontcolor_cols = kwargs['fontcolor_cols']
         else:
             fontcolor_cols = {}
+            
+        # get fontcolors
+        # format:{<color>:[col1,col2,...]}
+        if 'date_cols' in kwargs.keys():
+            date_cols = kwargs['date_cols']
+        else:
+            date_cols = []
+        
         # ********************************************************************
         
         # initialize xlInterface
@@ -141,20 +149,26 @@ class excel_reporter(xlFuncs):
         # dollar cells
         if 'dllr_cols' in kwargs.keys():
             dllr_cols = kwargs['dllr_cols']
+        else:
+            dllr_cols = []
         if 'prc_cols' in kwargs.keys():
             prc_cols = kwargs['prc_cols']
+        else:
+            prc_cols = []
         
         dllr_cells = []
         prc_cells = []
+        date_cells = []
         for col in dllr_cols:
             dllr_cells = dllr_cells + df_ref[col].tolist()
         for col in prc_cols:
             prc_cells = prc_cells + df_ref[col].tolist()
-        
+        for col in date_cols:
+            date_cells = date_cells + df_ref[col].tolist()
         # paste and format the ws
         map_dic = self.mapDic(df, df_ref)
         xli.insrIdx(ws, map_dic)
-        xli.frmtWs(ws,data_dfs=sections,fontsize_dic=fontsize_dic,fontcolor_dic=fontcolor_dic,prc_cells=prc_cells,dllr_cells=dllr_cells)
+        xli.frmtWs(ws,data_dfs=sections,fontsize_dic=fontsize_dic,fontcolor_dic=fontcolor_dic,prc_cells=prc_cells,date_cells=date_cells,dllr_cells=dllr_cells)
         
         return wb
         
