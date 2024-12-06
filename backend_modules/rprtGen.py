@@ -332,21 +332,7 @@ class rprtGenerator(xlFuncs):
                 df = df.drop(columns=col)
                 col = df.columns[0]
             return df
-        def drpCols(df):
-            """
-            Removed Columns that are duplicate information and cause problems
-            """
-            cols2Drp = [
-                    ]
-            # Older files do not have these columns
 
-            for col in cols2Drp:
-                try:
-                    df = df.drop(columns=[col])
-                except:
-                    pass
-            return df
-        df = drpCols(df)
         df = rplcHdrs(df)
         df = reformHdrs(df)
         df = rfrmCols(df)
@@ -385,98 +371,12 @@ class rprtGenerator(xlFuncs):
         data = data.dropna(subset=['PCKG'])
         return data
 
-    def isNaN(self,num):
-        """
-        returns whether a number is NaN or not
-        """
-        return num!= num
-
     def formatDates(self,df):
-        """
-        Takes dataof the form YYYMMDD and converts it to MM/DD/YYYY. It checks
-        two columns - 'MYR Contract Start Date', 'SAP Contract Start Date',
-        'MYR Contract End Date', and 'Contract End Date' to see which has the
-        Correct dates, and then formats them
-        """
-        australia_flag = self.dataPckg['australia']
-        def formatDateRow(row):
-            """
-            Isolates the correct date to use based on whether a date is in the
-            multi year col or not
-            """
-            def getDate(row,period):
-                """
-                Gets the date from either the multi year column or the SAP Date column
-                LOGIC:
-                If there is a multi year date, use that, otherwise use SAP
-                start and end dates
-                """
-                    
-                strt_dt = row['Contract Start Date']
-                end_dt = row['Contract End Date']
-                if period == 'start':
-                    nw_strt_dt = verifDateForm(strt_dt,australia_flag)
-                    return nw_strt_dt
-                elif period == 'end':
-                    nw_end_dt = verifDateForm(end_dt,australia_flag)
-                    return nw_end_dt
-                
-                
-            row['start date'] = getDate(row,period='start')
-            row['end date'] = getDate(row,period='end')
-            return row
-
-        def verifDateForm(date,australia=False):
-            """
-            Makes sure dates are of the form MM/DD/YYYY
-            """
-            def appElem(lst,elem):
-                """
-                takes in a list comprising the date, and the next element of the
-                date. If the length of the element is 1, add a 0 to the front of
-                it so the month and day always have 2 characters.
-                """
-                if len(elem) == 1:
-                    elem = '0' + elem
-                lst.append(elem)
-                return lst
-            if isinstance(date,datetime):
-                date = datetime.strftime(date,"%m/%d/%Y")
-            if "/" in date:
-                elems = date.split("/")
-            elif "-" in date:
-                elems = date.split("-")
-            else:
-                print("cannot identify date break in start and end dates")
-            nw_elems = []
-
-            # reorder the elements of the date
-            if len(elems[0]) <= 2:
-                # Appends elements in a certain order depending on the report type
-                if australia:
-                    nw_elems = appElem(nw_elems,elems[1])
-                    nw_elems = appElem(nw_elems,elems[0])
-                    nw_elems = appElem(nw_elems,elems[2])
-                else:
-                    nw_elems = appElem(nw_elems,elems[0])
-                    nw_elems = appElem(nw_elems,elems[1])
-                    nw_elems = appElem(nw_elems,elems[2])
-            else:
-                nw_elems = appElem(nw_elems,elems[1])
-                nw_elems = appElem(nw_elems,elems[2])
-                nw_elems = appElem(nw_elems,elems[0])
-            nw_date = ''
-            for elem in nw_elems:
-                nw_date = nw_date + elem + "/"
-
-            # remove the last '/' on the end
-            nw_date = nw_date[:-1]
-            return nw_date
 
         # Gets the correct date and creates Start Date and End Date columns for it
-        df = df.apply(lambda row:formatDateRow(row),axis = 1)
-        # drop the columns that are not needed
-        # df = df.drop(columns = ['SAP Contract Start Date','Contract End Date','Multi Year Date','MYR Contract End Date'])
+        df['start date'] = df['Contract Start Date']
+        df['end date'] = df['Contract End Date']
+        
         return df
 
     def getRoyBs(self,data):
@@ -1236,20 +1136,6 @@ class rprtGenerator(xlFuncs):
             row["Ending Within 3 Months"] = True
         return row
     
-    def dateHdr(self,row,hdrs):
-        """returns the header of the date someone shoud use"""
-        
-        for hdr in hdrs:
-            date = row[hdr]
-            try:
-                # makesure it is a date, otherwise pass
-                self.monToEnd(date)
-                return hdr
-            except:
-                pass
-        
-        return False
-    
     def normalizeDt(self,date):
         """
         Takes a date of the form MM/DD/YYYY and returns the numeric date
@@ -1359,8 +1245,8 @@ class rprtGenerator(xlFuncs):
         """
 
         start = row['start date']
-        strt_mo = start[:2]
-        strt_yr = start[6:]
+        strt_mo = start.strftime('%m')
+        strt_yr = start.strftime('%Y')
         strt_qtr = self.moDict[int(strt_mo)]
         acv = row['$ ACV']
 
@@ -1423,8 +1309,8 @@ class rprtGenerator(xlFuncs):
         """
         Takes a date of the form MM/DD/YYYY and returns qtr and yr
         """
-        mo = date[:2]
-        yr = date[6:]
+        mo = date.strftime('%m')
+        yr = date.strftime('%Y')
         qtr = self.moDict[int(mo)]
         return qtr, yr
 
@@ -1487,19 +1373,6 @@ class rprtGenerator(xlFuncs):
             return False
         else:
             return True
-
-    def getNextQtr(self,qtr,yr):
-        """
-        Returns the next quarter and year after the given ones
-        """
-        qtr_num = int(qtr[-1])
-        qtr_num = qtr_num + 1
-        if qtr_num > 4:
-            yr = int(yr) + 1
-            qtr_num = 1
-        qtr = "q" + str(qtr_num)
-        yr = str(yr)
-        return qtr,yr
 
     def getClientList(self,acv_df,fltr_col=True):
         """
@@ -1595,10 +1468,10 @@ class rprtGenerator(xlFuncs):
         yr  = int(self.dataPckg['yr'])
         
         custmr_strt = row['start date']
-        custmr_mo   = int(custmr_strt[:2])
+        custmr_mo   = int(custmr_strt.strftime('%m'))
         custmr_qtr  = self.moDict[custmr_mo]
         custmr_mo   = int(self.qtrStrt[custmr_qtr.lower()])
-        custmr_yr   = int(custmr_strt[6:])
+        custmr_yr   = int(custmr_strt.strftime('%Y'))
         
         if custmr_mo + 12*custmr_yr > mo + 12*yr:
             return True
@@ -1631,23 +1504,6 @@ class rprtGenerator(xlFuncs):
         df.to_csv(path, index=False)
         return  True
 
-    def getQtrYrFrmAcv(self,filename):
-        """
-        Returns the quarter and year of a client list based on its filename
-        """
-        australia = self.australia_flag
-        filename = filename.split(".")[0]
-        if australia:
-            cl_arr = filename.split(" ")
-            qtr = cl_arr[-1]
-            yr = cl_arr[-2]
-        else:
-            cl_arr = filename.split("_")
-            qtr = cl_arr[0]
-            yr = cl_arr[1]
-
-        return qtr, yr
-
     def mkClFlnm(self,qtr,yr):
         """
         creates the filename to save for the client list based on the  qtr and yr
@@ -1658,33 +1514,6 @@ class rprtGenerator(xlFuncs):
             filename = f'domestic_clients_{qtr}_{yr}.csv'
         return filename
 
-    def mkClFnmFrmAcv(self,acv):
-        """
-        creates the filename to save for the client list based on the ACV filename
-        """
-        if self.australia_flag:
-            fname = acv.split(".")[0]
-            qtr = fname.split(" ")[-1]
-            yr = fname.split(" ")[-2]
-
-        else:
-            qtr = acv.split("_")[0]
-            yr = acv.split("_")[1]
-
-        return self.mkClFlnm(qtr,yr)
-
-    def acvQtrYr(self,acv):
-
-        australia = self.dataPckg['australia']
-        acv = acv.split(".")[0]
-        if australia:
-            qtr = acv.split(" ")[-1]
-            yr = acv.split(" ")[2]
-        else:
-            qtr = acv.split("_")[0]
-            yr = acv.split("_")[1]
-
-        return qtr, yr
 
 def resetClLsts():
     name_dic = [{"qtr":"Q4","yr":"2021"},
@@ -1707,11 +1536,6 @@ def resetClLsts():
 
         # CREATE THE CLIENT LIST
         rp.getClientList(acv_df,fltr_col=True)
-
-def roundUp(n, decimals=0):
-    multiplier = 10**decimals
-    rounded_val = math.ceil(n * multiplier) / multiplier
-    return rounded_val
 
 def addXCol(df):
     """Adds a column of X's to the first column so a user can filter"""
